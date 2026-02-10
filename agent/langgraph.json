@@ -4,6 +4,5 @@
   "dependencies": ["."],
   "graphs": {
     "grit_coach": "./src/agent.ts:graph"
-  },
-  "env": ".env"
+  }
 }
