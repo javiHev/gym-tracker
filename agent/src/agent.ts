@@ -72,17 +72,15 @@ Usa este modelo para contextualizar tus recomendaciones cuando el usuario pregun
 
 // --- CONFIGURACIÓN DE MODELOS CON FALLBACK ---
 const MODELS = [
-  "gemini-2.0-flash",           // Muy rápido y con cuotas generosas
+  "gemini-1.5-flash",           // Alta cuota, muy estable
+  "gemini-2.0-flash",           // Rápido, buena cuota
   "gemini-2.0-flash-lite-preview-02-05", 
-  "gemini-1.5-flash",
-  "gemini-1.5-pro",
-  "gemini-3-flash-preview",
+  "gemini-1.5-pro",             // Más inteligente, menor cuota
+  "gemini-3-flash-preview",     // Último recurso (límite muy estricto de 20/día)
 ];
 
 async function getChatModel(index = 0) {
   const modelName = MODELS[index];
-  console.log(`🤖 [Agent] Intentando con modelo: ${modelName}`);
-  
   return new ChatGoogleGenerativeAI({
     model: modelName,
     apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
@@ -91,36 +89,28 @@ async function getChatModel(index = 0) {
 }
 
 async function chatNode(state: typeof AgentStateAnnotation.State, config: any) {
-  // --- IDENTIFICACIÓN BASADA EN CONTEXT (useCopilotReadable) ---
   const context = state.copilotkit?.context || [];
-
   const parse = (item: any) => {
     if (!item?.value) return {};
     return typeof item.value === "string" ? JSON.parse(item.value) : item.value;
   };
 
-  const userItem = context.find((c: any) => c.description === "Usuario autenticado");
-  const physicalItem = context.find((c: any) => c.description === "Datos físicos del usuario");
-  const prefsItem = context.find((c: any) => c.description === "Preferencias del usuario");
-
-  const userData = parse(userItem);
-  const physicalData = parse(physicalItem);
-  const prefsData = parse(prefsItem);
+  const userData = parse(context.find((c: any) => c.description === "Usuario autenticado"));
+  const physicalData = parse(context.find((c: any) => c.description === "Datos físicos del usuario"));
+  const prefsData = parse(context.find((c: any) => c.description === "Preferencias del usuario"));
 
   const userId = userData.userId || "unknown";
   const userEmail = userData.email || "entrenador";
 
-  console.log(`🤖 [Agent] IDENTIFICACIÓN FINAL: ${userId} (${userEmail})`);
-  
-  // Herramientas: solo frontend actions
   const allTools = convertActionsToDynamicStructuredTools(state.copilotkit?.actions || []);
-
-  // Intentar ejecutar con fallback de modelos
+  
   let response;
   let lastError;
 
   for (let i = 0; i < MODELS.length; i++) {
+    const modelName = MODELS[i];
     try {
+      console.log(`\n🤖 [Agent] Intentando con: ${modelName} (Intento ${i + 1}/${MODELS.length})`);
       const model = await getChatModel(i);
       const boundModel = allTools.length > 0 ? model.bindTools(allTools) : model;
 
@@ -128,8 +118,6 @@ async function chatNode(state: typeof AgentStateAnnotation.State, config: any) {
         physicalData.nombre ? `Nombre: ${physicalData.nombre}` : null,
         physicalData.peso_kg ? `Peso: ${physicalData.peso_kg}kg` : null,
         physicalData.altura_cm ? `Altura: ${physicalData.altura_cm}cm` : null,
-        prefsData.fecha_nacimiento ? `Fecha de nacimiento: ${prefsData.fecha_nacimiento}` : null,
-        prefsData.unidades ? `Unidades: ${prefsData.unidades}` : null,
       ].filter(Boolean).join("\n- ");
 
       response = await boundModel.invoke([
@@ -140,13 +128,18 @@ async function chatNode(state: typeof AgentStateAnnotation.State, config: any) {
         ...state.messages
       ], config);
       
-      // Si llegamos aquí, la llamada fue exitosa
+      console.log(`✅ [Agent] Éxito con: ${modelName}\n`);
       break; 
     } catch (err: any) {
-      console.error(`⚠️ [Agent] Error con modelo ${MODELS[i]}: ${err.message}`);
+      const isQuotaError = err.message?.includes("429") || err.message?.includes("quota");
+      console.error(`⚠️ [Agent] Error en ${modelName}: ${isQuotaError ? "CUOTA EXCEDIDA" : err.message}`);
+      
       lastError = err;
-      if (i === MODELS.length - 1) throw lastError; // Si es el último, lanzamos el error
-      console.log("🔄 [Agent] Probando siguiente modelo...");
+      if (i === MODELS.length - 1) {
+        console.error("❌ [Agent] Todos los modelos han fallado.");
+        throw lastError;
+      }
+      console.log("🔄 [Agent] Saltando al siguiente modelo...");
     }
   }
 
