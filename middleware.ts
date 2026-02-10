@@ -33,13 +33,23 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // 1. Si NO está logueado y trata de entrar al dashboard, patada al login
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  const { pathname } = request.nextUrl
+  console.log(`🛣️ [Middleware] Path: ${pathname}, User: ${user ? 'Logged In' : 'Logged Out'}`)
+
+  const isApiRoute = pathname.startsWith('/api')
+  const isPublicRoute =
+    pathname === '/login' ||
+    pathname.startsWith('/auth/callback')
+
+  // 1. Si NO está logueado y trata de entrar a algo privado (todo excepto login/callback/api)
+  if (!user && !isPublicRoute && !isApiRoute) {
+    console.log(`🚫 [Middleware] Redirecting to /login from ${pathname}`)
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // 2. Si YA está logueado y trata de entrar al login, mándalo al dashboard
-  if (user && request.nextUrl.pathname.startsWith('/login')) {
+  // 2. Si YA está logueado y está en login o la raíz, mándalo al dashboard
+  if (user && (pathname === '/login' || pathname === '/')) {
+    console.log(`✅ [Middleware] Redirecting to /dashboard from ${pathname}`)
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
@@ -48,13 +58,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Coincide con todas las rutas de solicitud excepto las que comienzan con:
-     * - _next/static (archivos estáticos)
-     * - _next/image (archivos de optimización de imágenes)
-     * - favicon.ico (archivo favicon)
-     * - auth/callback (necesario para que funcione el login)
-     */
-    '/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
