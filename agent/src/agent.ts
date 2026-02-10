@@ -70,11 +70,25 @@ Usa este modelo para contextualizar tus recomendaciones cuando el usuario pregun
 - Cuando crees una rutina, describe brevemente la lógica detrás (por qué esa estructura) en 1-2 líneas, luego ejecuta create_routine.
 - Si cometes un error o una herramienta falla, reconócelo y propón una solución.`;
 
-const model = new ChatGoogleGenerativeAI({
-  model: "gemini-3-flash-preview",
-  apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
-  temperature: 0.1,
-});
+// --- CONFIGURACIÓN DE MODELOS CON FALLBACK ---
+const MODELS = [
+  "gemini-2.0-flash",           // Muy rápido y con cuotas generosas
+  "gemini-2.0-flash-lite-preview-02-05", 
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+  "gemini-3-flash-preview",
+];
+
+async function getChatModel(index = 0) {
+  const modelName = MODELS[index];
+  console.log(`🤖 [Agent] Intentando con modelo: ${modelName}`);
+  
+  return new ChatGoogleGenerativeAI({
+    model: modelName,
+    apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
+    temperature: 0.1,
+  });
+}
 
 async function chatNode(state: typeof AgentStateAnnotation.State, config: any) {
   // --- IDENTIFICACIÓN BASADA EN CONTEXT (useCopilotReadable) ---
@@ -97,29 +111,44 @@ async function chatNode(state: typeof AgentStateAnnotation.State, config: any) {
   const userEmail = userData.email || "entrenador";
 
   console.log(`🤖 [Agent] IDENTIFICACIÓN FINAL: ${userId} (${userEmail})`);
-  console.log(`🤖 [Agent] PERFIL: ${physicalData.nombre || "sin nombre"} | ${physicalData.peso_kg || "?"}kg | ${physicalData.altura_cm || "?"}cm`);
-
-  // Herramientas: solo frontend actions (ejecutan en el browser con auth)
+  
+  // Herramientas: solo frontend actions
   const allTools = convertActionsToDynamicStructuredTools(state.copilotkit?.actions || []);
 
-  const boundModel = allTools.length > 0 ? model.bindTools(allTools) : model;
+  // Intentar ejecutar con fallback de modelos
+  let response;
+  let lastError;
 
-  // Construir contexto del usuario para el system prompt
-  const perfilTexto = [
-    physicalData.nombre ? `Nombre: ${physicalData.nombre}` : null,
-    physicalData.peso_kg ? `Peso: ${physicalData.peso_kg}kg` : null,
-    physicalData.altura_cm ? `Altura: ${physicalData.altura_cm}cm` : null,
-    prefsData.fecha_nacimiento ? `Fecha de nacimiento: ${prefsData.fecha_nacimiento}` : null,
-    prefsData.unidades ? `Unidades: ${prefsData.unidades}` : null,
-  ].filter(Boolean).join("\n- ");
+  for (let i = 0; i < MODELS.length; i++) {
+    try {
+      const model = await getChatModel(i);
+      const boundModel = allTools.length > 0 ? model.bindTools(allTools) : model;
 
-  const response = await boundModel.invoke([
-    {
-      role: "system",
-      content: `${SYSTEM_PROMPT}\n\n## USUARIO ACTUAL\n- userId: ${userId}\n- Email: ${userEmail}\n${perfilTexto ? `- ${perfilTexto}` : ""}\n\nUSA SIEMPRE este userId al llamar herramientas. Adapta las recomendaciones al perfil físico del usuario cuando esté disponible.`
-    },
-    ...state.messages
-  ], config);
+      const perfilTexto = [
+        physicalData.nombre ? `Nombre: ${physicalData.nombre}` : null,
+        physicalData.peso_kg ? `Peso: ${physicalData.peso_kg}kg` : null,
+        physicalData.altura_cm ? `Altura: ${physicalData.altura_cm}cm` : null,
+        prefsData.fecha_nacimiento ? `Fecha de nacimiento: ${prefsData.fecha_nacimiento}` : null,
+        prefsData.unidades ? `Unidades: ${prefsData.unidades}` : null,
+      ].filter(Boolean).join("\n- ");
+
+      response = await boundModel.invoke([
+        {
+          role: "system",
+          content: `${SYSTEM_PROMPT}\n\n## USUARIO ACTUAL\n- userId: ${userId}\n- Email: ${userEmail}\n${perfilTexto ? `- ${perfilTexto}` : ""}\n\nUSA SIEMPRE este userId al llamar herramientas.`
+        },
+        ...state.messages
+      ], config);
+      
+      // Si llegamos aquí, la llamada fue exitosa
+      break; 
+    } catch (err: any) {
+      console.error(`⚠️ [Agent] Error con modelo ${MODELS[i]}: ${err.message}`);
+      lastError = err;
+      if (i === MODELS.length - 1) throw lastError; // Si es el último, lanzamos el error
+      console.log("🔄 [Agent] Probando siguiente modelo...");
+    }
+  }
 
   return { messages: [response] };
 }
