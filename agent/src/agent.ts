@@ -1,6 +1,7 @@
 // @ts-ignore
 declare module "@copilotkit/sdk-js/langgraph";
 
+import "dotenv/config";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import {
   Annotation,
