@@ -2,8 +2,8 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm
+# Install pnpm and langgraph-cli
+RUN npm install -g pnpm @langchain/langgraph-cli
 
 # Copy package files
 COPY package.json pnpm-lock.yaml ./
@@ -15,5 +15,5 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 # Start the server
-# Railway injects PORT environment variable
-CMD ["sh", "-c", "npx @langchain/langgraph-cli dev --host 0.0.0.0 --port ${PORT:-8123} --no-browser"]
+# Railway/Render inject PORT environment variable
+CMD ["sh", "-c", "langgraphjs dev --host 0.0.0.0 --port ${PORT:-10000} --no-browser"]

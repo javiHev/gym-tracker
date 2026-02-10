@@ -70,7 +70,8 @@ Usa este modelo para contextualizar tus recomendaciones cuando el usuario pregun
 - Si cometes un error o una herramienta falla, reconócelo y propón una solución.`;
 
 const model = new ChatGoogleGenerativeAI({
-  model: "gemini-flash-lite-latest",
+  model: "gemini-3-flash-preview",
+  apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
   temperature: 0.1,
 });
 
