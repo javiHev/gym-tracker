@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Trash2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ActiveExercise } from "@/components/workout/ActiveExercise";
 import { AIWorkoutAssistant } from "@/components/workout/AIWorkoutAssistant";
 import { RoutineDay, Exercise, WorkoutSession } from "@/types/routines";
 import { useCopilotReadable } from "@copilotkit/react-core";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export default function WorkoutSessionPage() {
     const params = useParams();
@@ -23,6 +24,7 @@ export default function WorkoutSessionPage() {
     const [logs, setLogs] = useState<any[]>([]); // All logs for this session
     const [historyLogs, setHistoryLogs] = useState<any[]>([]); // Logs from previous sessions
     const [loading, setLoading] = useState(true);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
     // Fetch Session Data
     useEffect(() => {
@@ -155,6 +157,25 @@ export default function WorkoutSessionPage() {
         router.push("/dashboard");
     };
 
+    const handleDeleteWorkout = async () => {
+        if (!session) return;
+
+        try {
+            const { error } = await supabase
+                .from("workout_sessions")
+                .delete()
+                .eq("id", session.id);
+
+            if (error) throw error;
+
+            toast.success("Entrenamiento eliminado");
+            router.push("/dashboard");
+        } catch (error: any) {
+            console.error("Error deleting workout:", error);
+            toast.error("No se pudo eliminar el entrenamiento");
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-background">
@@ -177,12 +198,44 @@ export default function WorkoutSessionPage() {
                     </Button>
                     <div>
                         <h1 className="text-lg font-bold">{routineDay.name}</h1>
-                        <p className="text-xs text-muted-foreground">En progreso...</p>
+                        <p className="text-xs text-muted-foreground">{session.status === 'completed' ? 'Sesión finalizada' : 'En progreso...'}</p>
                     </div>
                 </div>
-                <Button variant="destructive" size="sm" onClick={finishWorkout}>
-                    Terminar
-                </Button>
+                
+                <div className="flex items-center gap-2">
+                    <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive">
+                                <Trash2 size={20} />
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                    <AlertCircle className="text-destructive" size={20} />
+                                    ¿Eliminar entrenamiento?
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Esta acción eliminará permanentemente todos los datos registrados en esta sesión. No se puede deshacer.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter className="gap-2 sm:gap-0">
+                                <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+                                    Cancelar
+                                </Button>
+                                <Button variant="destructive" onClick={handleDeleteWorkout}>
+                                    Eliminar para siempre
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    {session.status !== 'completed' && (
+                        <Button variant="destructive" size="sm" onClick={finishWorkout} className="bg-black text-white hover:bg-zinc-800">
+                            Terminar
+                        </Button>
+                    )}
+                </div>
             </header>
 
             <main className="max-w-md mx-auto px-4 py-6">

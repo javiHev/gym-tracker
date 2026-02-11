@@ -6,11 +6,12 @@ import { CalendarView } from "@/components/exercises/CalendarView";
 import { ScheduledSession } from "@/types/routines";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, Play, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Calendar, Play, RotateCcw, CheckCircle2, Trash2, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export default function ExercisesPage() {
     const supabase = createClient();
@@ -19,36 +20,38 @@ export default function ExercisesPage() {
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedSession, setSelectedSession] = useState<ScheduledSession | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+    const fetchSessions = async () => {
+        setLoading(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+            .from("workout_sessions")
+            .select("id, started_at, status, routine_day:routine_days(name)")
+            .eq("user_id", user.id);
+
+        if (data) {
+            const mapped: ScheduledSession[] = data.map((s: any) => {
+                const date = new Date(s.started_at);
+                // Format YYYY-MM-DD
+                const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+                return {
+                    id: s.id,
+                    date: dateString,
+                    completed: s.status === 'completed',
+                    status: s.status,
+                    routineName: s.routine_day?.name || "Entrenamiento"
+                };
+            });
+            setSchedule(mapped);
+        }
+        setLoading(false);
+    };
 
     useEffect(() => {
-        const fetchSessions = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            const { data } = await supabase
-                .from("workout_sessions")
-                .select("id, started_at, status, routine_day:routine_days(name)")
-                .eq("user_id", user.id);
-
-            if (data) {
-                const mapped: ScheduledSession[] = data.map((s: any) => {
-                    const date = new Date(s.started_at);
-                    // Format YYYY-MM-DD
-                    const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-
-                    return {
-                        id: s.id,
-                        date: dateString,
-                        completed: s.status === 'completed',
-                        status: s.status,
-                        routineName: s.routine_day?.name || "Entrenamiento"
-                    };
-                });
-                setSchedule(mapped);
-            }
-            setLoading(false);
-        };
-
         fetchSessions();
     }, []);
 
@@ -67,11 +70,27 @@ export default function ExercisesPage() {
 
     const handleViewDetails = () => {
         if (selectedSession?.id) {
-            // For now just allow resume/view same page, or could go to specific details page
-            // If completed, maybe show summary? Re-using workout page for now as mapped
-            // Ideally we need a Summary/Details readonly page for completed sessions.
-            // For MVP, if completed, maybe we just show a toast "Sesión completada"? Or allow viewing logs.
             router.push(`/workout/${selectedSession.id}`);
+        }
+    };
+
+    const handleDeleteSession = async () => {
+        if (!selectedSession) return;
+
+        try {
+            const { error } = await supabase
+                .from("workout_sessions")
+                .delete()
+                .eq("id", selectedSession.id);
+
+            if (error) throw error;
+
+            toast.success("Entrenamiento eliminado correctamente");
+            setIsDeleteDialogOpen(false);
+            fetchSessions(); // Refresh list
+        } catch (error: any) {
+            console.error("Error deleting session:", error);
+            toast.error("No se pudo eliminar el entrenamiento");
         }
     };
 
@@ -100,29 +119,57 @@ export default function ExercisesPage() {
                     <Card className="border-l-4" style={{ borderLeftColor: selectedSession.completed ? '#10b981' : '#3b82f6' }}>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-lg flex justify-between items-center">
-                                {selectedSession.routineName}
-                                {selectedSession.completed ? (
-                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1">
-                                        <CheckCircle2 size={12} /> Completado
-                                    </span>
-                                ) : (
-                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full flex items-center gap-1">
-                                        <RotateCcw size={12} /> En Progreso
-                                    </span>
-                                )}
+                                <span className="truncate mr-2">{selectedSession.routineName}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {selectedSession.completed ? (
+                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full flex items-center gap-1">
+                                            <CheckCircle2 size={12} /> Completado
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full flex items-center gap-1">
+                                            <RotateCcw size={12} /> En Progreso
+                                        </span>
+                                    )}
+                                    
+                                    <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                                        <DialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                                                <Trash2 size={16} />
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle className="flex items-center gap-2">
+                                                    <AlertCircle className="text-destructive" size={20} />
+                                                    ¿Eliminar entrenamiento?
+                                                </DialogTitle>
+                                                <DialogDescription>
+                                                    Esta acción no se puede deshacer. Se borrarán todos los pesos y repeticiones registrados en esta sesión.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <DialogFooter className="gap-2 sm:gap-0">
+                                                <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+                                                    Cancelar
+                                                </Button>
+                                                <Button variant="destructive" onClick={handleDeleteSession}>
+                                                    Eliminar permanentemente
+                                                </Button>
+                                            </DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
+                                </div>
                             </CardTitle>
                             <CardDescription>
                                 {selectedSession.status === 'abandoned' ? 'Abandonado' : (selectedSession.completed ? 'Finalizado con éxito' : 'Listo para continuar')}
                             </CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            {!selectedSession.completed && (
-                                <Button className="w-full gap-2" onClick={handleResume}>
+                        <CardContent className="flex flex-col gap-2">
+                            {!selectedSession.completed ? (
+                                <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700" onClick={handleResume}>
                                     <Play size={16} /> Retomar Sesión
                                 </Button>
-                            )}
-                            {selectedSession.completed && (
-                                <Button variant="outline" className="w-full gap-2" onClick={handleViewDetails}>
+                            ) : (
+                                <Button variant="outline" className="w-full gap-2 border-zinc-200" onClick={handleViewDetails}>
                                     Ver Detalles
                                 </Button>
                             )}
