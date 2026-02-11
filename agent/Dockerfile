@@ -9,11 +9,14 @@ RUN npm install -g pnpm @langchain/langgraph-cli
 COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 
 # Copy source
 COPY . .
 
+# Expose port (Cloud Run default)
+EXPOSE 8080
+
 # Start the server
-# Railway/Render inject PORT environment variable
-CMD ["sh", "-c", "langgraphjs dev --host 0.0.0.0 --port ${PORT:-10000} --no-browser"]
+# Cloud Run injects PORT environment variable, default to 8080
+CMD ["sh", "-c", "langgraphjs dev --host 0.0.0.0 --port ${PORT:-8080} --no-browser"]
