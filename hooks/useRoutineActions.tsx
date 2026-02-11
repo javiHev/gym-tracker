@@ -83,6 +83,7 @@ export function useRoutineActions(onRoutineCreated?: () => void) {
             },
         ],
         handler: async ({ name, description, days }: any) => {
+            console.log("🚀 [create_routine] Iniciando creación:", { name, days });
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error("Usuario no autenticado");
@@ -100,33 +101,54 @@ export function useRoutineActions(onRoutineCreated?: () => void) {
                     .single();
 
                 if (routineError || !routine) {
+                    console.error("❌ [create_routine] Error al crear rutina:", routineError);
                     throw new Error(`Error creando rutina: ${routineError?.message}`);
                 }
 
+                console.log("✅ [create_routine] Rutina creada:", routine.id);
+
                 // 2. Crear días y ejercicios
                 for (const day of days) {
+                    console.log(`📅 [create_routine] Creando día: ${day.name}`, day);
                     const { data: dayData, error: dayError } = await supabase
                         .from("routine_days")
                         .insert({
                             routine_id: routine.id,
                             name: day.name,
-                            day_number: day.day_number,
+                            day_number: Number(day.day_number),
                         })
                         .select()
                         .single();
 
-                    if (dayError || !dayData) continue;
+                    if (dayError || !dayData) {
+                        console.error(`❌ [create_routine] Error al crear día ${day.name}:`, dayError);
+                        continue;
+                    }
 
-                    const exercisesToInsert = day.exercises.map((ex: any, idx: number) => ({
-                        routine_day_id: dayData.id,
-                        name: ex.name,
-                        base_sets: ex.sets,
-                        base_reps: ex.reps,
-                        rest_seconds: ex.rest_seconds || 90,
-                        order_index: idx,
-                    }));
+                    console.log(`✅ [create_routine] Día creado: ${dayData.id}. Añadiendo ${day.exercises?.length || 0} ejercicios.`);
 
-                    await supabase.from("exercises").insert(exercisesToInsert);
+                    if (day.exercises && day.exercises.length > 0) {
+                        const exercisesToInsert = day.exercises.map((ex: any, idx: number) => ({
+                            routine_day_id: dayData.id,
+                            name: ex.name,
+                            base_sets: Number(ex.sets),
+                            base_reps: String(ex.reps),
+                            rest_seconds: Number(ex.rest_seconds || 120),
+                            order_index: idx,
+                        }));
+
+                        const { error: exercisesError } = await supabase
+                            .from("exercises")
+                            .insert(exercisesToInsert);
+
+                        if (exercisesError) {
+                            console.error(`❌ [create_routine] Error al insertar ejercicios para día ${day.name}:`, exercisesError);
+                        } else {
+                            console.log(`✅ [create_routine] Ejercicios insertados para día ${day.name}`);
+                        }
+                    } else {
+                        console.warn(`⚠️ [create_routine] El día ${day.name} no tiene ejercicios.`);
+                    }
                 }
 
                 toast.success(`Rutina "${name}" creada`);
@@ -135,12 +157,10 @@ export function useRoutineActions(onRoutineCreated?: () => void) {
                 return {
                     success: true,
                     routine_id: routine.id,
-                    routine_name: routine.name,
-                    days_created: days.length,
-                    total_exercises: days.reduce((acc: number, day: any) => acc + day.exercises.length, 0),
-                    message: `Rutina "${name}" creada con ${days.length} días.`,
+                    message: `Rutina "${name}" creada con éxito.`,
                 };
             } catch (error: any) {
+                console.error("💥 [create_routine] Excepción fatal:", error);
                 toast.error("Error al crear la rutina");
                 return { success: false, error: error.message };
             }

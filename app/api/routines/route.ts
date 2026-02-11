@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
 
 async function createRoutine(supabase: any, userId: string, payload: any) {
     const { name, description, days } = payload;
+    console.log("🚀 [API createRoutine] Payload:", JSON.stringify(payload, null, 2));
 
     // 1. Crear la rutina
     const { data: routine, error: routineError } = await supabase
@@ -58,41 +59,48 @@ async function createRoutine(supabase: any, userId: string, payload: any) {
         .single();
 
     if (routineError || !routine) {
+        console.error("❌ [API createRoutine] Error:", routineError);
         throw new Error(`Error creating routine: ${routineError?.message}`);
     }
 
     // 2. Crear los días y ejercicios
-    for (const day of days) {
-        const { data: dayData, error: dayError } = await supabase
-            .from("routine_days")
-            .insert({
-                routine_id: routine.id,
-                name: day.name,
-                day_number: day.day_number,
-            })
-            .select()
-            .single();
+    if (days && Array.isArray(days)) {
+        for (const day of days) {
+            const { data: dayData, error: dayError } = await supabase
+                .from("routine_days")
+                .insert({
+                    routine_id: routine.id,
+                    name: day.name,
+                    day_number: Number(day.day_number),
+                })
+                .select()
+                .single();
 
-        if (dayError || !dayData) {
-            throw new Error(`Error creating day: ${dayError?.message}`);
-        }
+            if (dayError || !dayData) {
+                console.error("❌ [API createRoutine] Day error:", dayError);
+                throw new Error(`Error creating day: ${dayError?.message}`);
+            }
 
-        // 3. Crear ejercicios para este día
-        const exercisesToInsert = day.exercises.map((ex: any, idx: number) => ({
-            routine_day_id: dayData.id,
-            name: ex.name,
-            base_sets: ex.sets,
-            base_reps: ex.reps,
-            rest_seconds: ex.rest_seconds || 90,
-            order_index: idx,
-        }));
+            // 3. Crear ejercicios para este día
+            if (day.exercises && Array.isArray(day.exercises)) {
+                const exercisesToInsert = day.exercises.map((ex: any, idx: number) => ({
+                    routine_day_id: dayData.id,
+                    name: ex.name,
+                    base_sets: Number(ex.sets),
+                    base_reps: String(ex.reps),
+                    rest_seconds: Number(ex.rest_seconds || 120),
+                    order_index: idx,
+                }));
 
-        const { error: exercisesError } = await supabase
-            .from("exercises")
-            .insert(exercisesToInsert);
+                const { error: exercisesError } = await supabase
+                    .from("exercises")
+                    .insert(exercisesToInsert);
 
-        if (exercisesError) {
-            throw new Error(`Error creating exercises: ${exercisesError.message}`);
+                if (exercisesError) {
+                    console.error("❌ [API createRoutine] Exercises error:", exercisesError);
+                    throw new Error(`Error creating exercises: ${exercisesError.message}`);
+                }
+            }
         }
     }
 
@@ -100,9 +108,7 @@ async function createRoutine(supabase: any, userId: string, payload: any) {
         success: true,
         routine_id: routine.id,
         routine_name: routine.name,
-        days_created: days.length,
-        total_exercises: days.reduce((acc: number, day: any) => acc + day.exercises.length, 0),
-        message: `Rutina "${name}" creada exitosamente con ${days.length} días.`,
+        message: `Rutina "${name}" creada exitosamente.`,
     });
 }
 
