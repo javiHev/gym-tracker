@@ -73,11 +73,11 @@ Usa este modelo para contextualizar tus recomendaciones cuando el usuario pregun
 
 // --- CONFIGURACIÓN DE MODELOS CON FALLBACK ---
 const MODELS = [
-  "gemini-1.5-flash",           // Alta cuota, muy estable
-  "gemini-2.0-flash",           // Rápido, buena cuota
+  "gemini-3-flash-preview",     // El más potente (pero con cuota muy baja)
+  "gemini-1.5-pro",             // Muy inteligente y capaz
+  "gemini-2.0-flash",           // Rápido y moderno
   "gemini-2.0-flash-lite-preview-02-05", 
-  "gemini-1.5-pro",             // Más inteligente, menor cuota
-  "gemini-3-flash-preview",     // Último recurso (límite muy estricto de 20/día)
+  "gemini-1.5-flash",           // El más estable y con mayor cuota (fallback final)
 ];
 
 async function getChatModel(index = 0) {
